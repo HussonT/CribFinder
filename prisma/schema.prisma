@@ -1,0 +1,340 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  phone         String?
+  whatsappId    String?
+
+  // Preferences
+  searchPreferences Json?   // { budget, bedrooms, neighborhoods, etc. }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Auth relations
+  accounts Account[]
+  sessions Session[]
+
+  // App relations
+  shortlistMemberships ShortlistMember[]
+  votes                Vote[]
+  comments             Comment[]
+  sentMessages         Message[]         @relation("SentBy")
+  assignedConversations Conversation[]   @relation("AssignedTo")
+  invitesSent          Invite[]          @relation("InviteSender")
+  invitesUsed          Invite[]          @relation("InviteUsed")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Invites ─────────────────────────────────────────────────────────────────
+
+model Invite {
+  id          String    @id @default(cuid())
+  code        String    @unique @default(cuid())
+  email       String?
+  shortlistId String?
+
+  senderId    String
+  usedById    String?
+  usedAt      DateTime?
+
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+
+  sender    User       @relation("InviteSender", fields: [senderId], references: [id])
+  usedBy    User?      @relation("InviteUsed", fields: [usedById], references: [id])
+  shortlist Shortlist? @relation(fields: [shortlistId], references: [id])
+}
+
+// ─── Listings ────────────────────────────────────────────────────────────────
+
+enum ListingSource {
+  CRAIGSLIST
+  ZILLOW
+  STREETEASY
+  APARTMENTS_COM
+  REALTOR_COM
+  FACEBOOK
+  MANUAL
+}
+
+enum ContactMethod {
+  EMAIL
+  PHONE
+  TEXT
+  IN_APP
+  FORM
+  UNKNOWN
+}
+
+model Listing {
+  id        String        @id @default(cuid())
+  source    ListingSource
+  sourceId  String?       // ID on the original platform
+  sourceUrl String?
+
+  title       String
+  description String?
+  price       Int?        // Monthly rent in cents
+  bedrooms    Float?
+  bathrooms   Float?
+  sqft        Int?
+
+  address       String?
+  neighborhood  String?
+  city          String    @default("New York")
+  state         String    @default("NY")
+  zip           String?
+  latitude      Float?
+  longitude     Float?
+
+  images    String[]      // Array of image URLs
+  amenities String[]
+
+  // Contact info
+  contactName   String?
+  contactPhone  String?
+  contactEmail  String?
+  contactMethod ContactMethod @default(UNKNOWN)
+
+  petPolicy     String?
+  availableDate DateTime?
+  leaseTerm     String?
+  brokerFee     Boolean?
+
+  // AI-generated fields
+  scamScore     Float?    // 0-1, higher = more likely scam
+  qualityScore  Float?    // 0-1, higher = better listing
+  scamFlags     String[]  // Reasons for scam suspicion
+
+  postedAt  DateTime?
+  scrapedAt DateTime   @default(now())
+  rawData   Json?
+
+  // Deduplication
+  fingerprint String?   // Hash for dedup matching
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shortlistListings ShortlistListing[]
+  conversations     Conversation[]
+
+  @@unique([source, sourceId])
+  @@index([neighborhood])
+  @@index([price])
+  @@index([bedrooms])
+  @@index([fingerprint])
+  @@index([scrapedAt])
+}
+
+// ─── Shortlists ──────────────────────────────────────────────────────────────
+
+model Shortlist {
+  id   String @id @default(cuid())
+  name String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  ShortlistMember[]
+  listings ShortlistListing[]
+  invites  Invite[]
+}
+
+enum ShortlistRole {
+  OWNER
+  MEMBER
+}
+
+model ShortlistMember {
+  id          String        @id @default(cuid())
+  shortlistId String
+  userId      String
+  role        ShortlistRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  shortlist Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shortlistId, userId])
+}
+
+enum ListingStatus {
+  NEW
+  INTERESTED
+  CONTACTED
+  TOUR_SCHEDULED
+  APPLIED
+  ACCEPTED
+  REJECTED
+  ARCHIVED
+}
+
+model ShortlistListing {
+  id          String        @id @default(cuid())
+  shortlistId String
+  listingId   String
+  status      ListingStatus @default(NEW)
+  notes       String?
+  addedAt     DateTime      @default(now())
+
+  shortlist Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  listing   Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  votes    Vote[]
+  comments Comment[]
+
+  @@unique([shortlistId, listingId])
+}
+
+model Vote {
+  id                 String @id @default(cuid())
+  shortlistListingId String
+  userId             String
+  value              Int    // 1 = up, -1 = down, 2 = heart
+
+  createdAt DateTime @default(now())
+
+  shortlistListing ShortlistListing @relation(fields: [shortlistListingId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shortlistListingId, userId])
+}
+
+model Comment {
+  id                 String @id @default(cuid())
+  shortlistListingId String
+  userId             String
+  content            String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shortlistListing ShortlistListing @relation(fields: [shortlistListingId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Messaging ───────────────────────────────────────────────────────────────
+
+enum ConversationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  IN_APP
+}
+
+enum ConversationStatus {
+  NEEDS_RESPONSE
+  WAITING
+  CLOSED
+}
+
+model Conversation {
+  id          String              @id @default(cuid())
+  listingId   String
+  channel     ConversationChannel @default(EMAIL)
+  status      ConversationStatus  @default(NEEDS_RESPONSE)
+
+  assignedToId String?
+  subject      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  assignedTo User?    @relation("AssignedTo", fields: [assignedToId], references: [id])
+  messages   Message[]
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  direction      MessageDirection
+  content        String
+  aiDrafted      Boolean          @default(false)
+
+  sentById String?
+  sentAt   DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("SentBy", fields: [sentById], references: [id])
+}
+
+// ─── Scraping Jobs ───────────────────────────────────────────────────────────
+
+enum ScrapeJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model ScrapeJob {
+  id     String          @id @default(cuid())
+  source ListingSource
+  status ScrapeJobStatus @default(PENDING)
+
+  // Which waterfall level succeeded
+  levelUsed   Int?      // 1-5
+  listingsFound Int     @default(0)
+  errorMessage  String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+}

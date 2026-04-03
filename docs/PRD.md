@@ -370,10 +370,11 @@ Message
 
 ---
 
-## 10. Open Questions
+## 10. Decisions Made
 
-1. **Monetization model?** Freemium (limited shortlists/outreach on free tier)? Subscription? Per-search?
-2. **Should we support broker listings or focus on no-fee/FSBO?** NYC market has both.
-3. **Native mobile app or PWA first?** PWA is faster to ship; native gives better notifications.
-4. **Multi-city from day one or NYC-only MVP?** Recommend NYC-only for focus.
-5. **Should the shared inbox support voice/video calls?** Could be useful for virtual tours.
+1. **Monetization:** None — personal tool for friends.
+2. **Listings:** All types (broker + no-fee + FSBO).
+3. **Interface:** Web app only, no PWA. Notifications via WhatsApp.
+4. **Location:** NYC only. Primary neighborhoods: **West Village, SoHo, Chelsea**.
+5. **Voice/Video:** Not needed for now.
+6. **Target users:** You and your friends — invite-only, no public signup.
