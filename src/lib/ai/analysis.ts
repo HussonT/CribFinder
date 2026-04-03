@@ -1,5 +1,5 @@
 import { anthropic } from "./client";
-import type { Listing } from "@/generated/prisma";
+import type { Listing } from "@/lib/db/types";
 
 interface ScamAnalysis {
   scamScore: number; // 0-1

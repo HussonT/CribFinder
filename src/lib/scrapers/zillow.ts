@@ -1,4 +1,4 @@
-import { ListingSource } from "@/generated/prisma";
+import { ListingSource } from "@/lib/db/types";
 import {
   type SourceAdapter,
   type ScrapeConfig,

@@ -1,5 +1,5 @@
 import { anthropic } from "./client";
-import type { Listing, Conversation, Message } from "@/generated/prisma";
+import type { Listing, Conversation, Message } from "@/lib/db/types";
 
 type MessageTone = "formal" | "friendly" | "brief";
 

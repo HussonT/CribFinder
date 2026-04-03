@@ -175,6 +175,9 @@ model Listing {
   @@index([bedrooms])
   @@index([fingerprint])
   @@index([scrapedAt])
+  @@index([createdAt])
+  @@index([qualityScore])
+  @@index([scamScore])
 }
 
 // ─── Shortlists ──────────────────────────────────────────────────────────────
@@ -294,6 +297,10 @@ model Conversation {
   listing    Listing  @relation(fields: [listingId], references: [id])
   assignedTo User?    @relation("AssignedTo", fields: [assignedToId], references: [id])
   messages   Message[]
+
+  @@index([listingId])
+  @@index([status])
+  @@index([updatedAt])
 }
 
 enum MessageDirection {
@@ -313,6 +320,8 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sentBy       User?        @relation("SentBy", fields: [sentById], references: [id])
+
+  @@index([conversationId, sentAt])
 }
 
 // ─── Scraping Jobs ───────────────────────────────────────────────────────────

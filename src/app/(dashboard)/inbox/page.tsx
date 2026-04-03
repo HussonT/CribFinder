@@ -15,7 +15,7 @@ import {
   Loader2,
   User,
 } from "lucide-react";
-import type { Listing, Conversation, Message } from "@/generated/prisma";
+import type { Listing, Conversation, Message } from "@/lib/db/types";
 
 interface ConversationWithRelations extends Conversation {
   listing: Pick<

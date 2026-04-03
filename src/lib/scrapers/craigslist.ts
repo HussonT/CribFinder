@@ -1,4 +1,4 @@
-import { ListingSource } from "@/generated/prisma";
+import { ListingSource } from "@/lib/db/types";
 import {
   type SourceAdapter,
   type ScrapeConfig,
@@ -168,7 +168,8 @@ async function scrapeViaHTML(config: ScrapeConfig): Promise<ScrapeResult> {
       const query = NEIGHBORHOOD_QUERIES[neighborhood] ?? neighborhood;
       const url = `${CL_BASE}/search/mnh/apa?query=${encodeURIComponent(query)}&availabilityMode=0${config.maxPrice ? `&max_price=${config.maxPrice / 100}` : ""}`;
 
-      const response = await fetch(url, {
+      const { fetchWithTimeout } = await import("./fetch");
+      const response = await fetchWithTimeout(url, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",

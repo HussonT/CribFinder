@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { ShortlistListingCard } from "@/components/listings/listing-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,29 @@ import {
   ArrowLeft,
   Link as LinkIcon,
   Users,
-  MessageSquare,
   Loader2,
   Send,
+  Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
-import type { Listing } from "@/generated/prisma";
+import type { Listing } from "@/lib/db/types";
+
+interface CommentData {
+  id: string;
+  content: string;
+  createdAt: string;
+  user: { id: string; name: string | null; image: string | null };
+}
+
+interface ShortlistEntry {
+  id: string;
+  listingId: string;
+  status: string;
+  listing: Listing;
+  votes: Array<{ value: number; userId: string }>;
+  comments: CommentData[];
+}
 
 interface ShortlistData {
   id: string;
@@ -23,49 +40,47 @@ interface ShortlistData {
   members: Array<{
     user: { id: string; name: string | null; image: string | null };
     role: string;
+    userId: string;
   }>;
-  listings: Array<{
-    id: string;
-    listingId: string;
-    status: string;
-    listing: Listing;
-    votes: Array<{ value: number; userId: string }>;
-    _count: { comments: number };
-  }>;
+  listings: ShortlistEntry[];
 }
 
 export default function ShortlistDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const shortlistId = params.id as string;
   const [data, setData] = useState<ShortlistData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [commentInputs, setCommentInputs] = useState<Record<string, string>>(
-    {}
-  );
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/shortlists")
-      .then((r) => r.json())
-      .then((shortlists: ShortlistData[]) => {
-        const found = shortlists.find((s) => s.id === shortlistId);
-        setData(found ?? null);
-      })
-      .finally(() => setLoading(false));
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/shortlists/${shortlistId}`);
+      if (res.ok) {
+        setData(await res.json());
+      } else {
+        setData(null);
+      }
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [shortlistId]);
 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const handleVote = async (listingId: string, value: number) => {
-    await fetch(
-      `/api/shortlists/${shortlistId}/listings/${listingId}/vote`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value }),
-      }
-    );
-    // Refresh
-    const res = await fetch("/api/shortlists");
-    const shortlists = await res.json();
-    setData(shortlists.find((s: ShortlistData) => s.id === shortlistId) ?? null);
+    await fetch(`/api/shortlists/${shortlistId}/listings/${listingId}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
+    fetchData();
   };
 
   const handleStatusChange = async (listingId: string, status: string) => {
@@ -80,16 +95,28 @@ export default function ShortlistDetailPage() {
     const content = commentInputs[listingId];
     if (!content?.trim()) return;
 
-    await fetch(
-      `/api/shortlists/${shortlistId}/listings/${listingId}/comments`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      }
-    );
+    await fetch(`/api/shortlists/${shortlistId}/listings/${listingId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
 
     setCommentInputs((prev) => ({ ...prev, [listingId]: "" }));
+    fetchData();
+  };
+
+  const handleRemoveListing = async (listingId: string) => {
+    await fetch(`/api/shortlists/${shortlistId}/listings`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ listingId }),
+    });
+    fetchData();
+  };
+
+  const handleDeleteShortlist = async () => {
+    await fetch(`/api/shortlists/${shortlistId}`, { method: "DELETE" });
+    router.push("/shortlists");
   };
 
   const copyInviteLink = async () => {
@@ -100,7 +127,15 @@ export default function ShortlistDetailPage() {
     });
     const { url } = await res.json();
     await navigator.clipboard.writeText(url);
-    alert("Invite link copied!");
+  };
+
+  const toggleComments = (listingId: string) => {
+    setExpandedComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(listingId)) next.delete(listingId);
+      else next.add(listingId);
+      return next;
+    });
   };
 
   if (loading) {
@@ -122,7 +157,6 @@ export default function ShortlistDetailPage() {
     );
   }
 
-  // Group by status for pipeline view
   const statusOrder = [
     "NEW",
     "INTERESTED",
@@ -131,16 +165,14 @@ export default function ShortlistDetailPage() {
     "APPLIED",
     "ACCEPTED",
     "REJECTED",
+    "ARCHIVED",
   ];
 
   return (
     <div className="max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link
-          href="/shortlists"
-          className="p-2 hover:bg-gray-100 rounded-lg transition"
-        >
+        <Link href="/shortlists" className="p-2 hover:bg-gray-100 rounded-lg transition">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div className="flex-1">
@@ -154,7 +186,6 @@ export default function ShortlistDetailPage() {
           </div>
         </div>
 
-        {/* Member avatars */}
         <div className="flex -space-x-2 mr-2">
           {data.members.map((m) => (
             <div
@@ -163,11 +194,7 @@ export default function ShortlistDetailPage() {
               title={`${m.user.name ?? "?"} (${m.role})`}
             >
               {m.user.image ? (
-                <img
-                  src={m.user.image}
-                  alt=""
-                  className="w-full h-full rounded-full"
-                />
+                <img src={m.user.image} alt="" className="w-full h-full rounded-full" />
               ) : (
                 (m.user.name?.[0] ?? "?").toUpperCase()
               )}
@@ -177,16 +204,28 @@ export default function ShortlistDetailPage() {
 
         <Button variant="secondary" onClick={copyInviteLink}>
           <LinkIcon className="w-4 h-4 mr-1" />
-          Invite Friends
+          Invite
         </Button>
+        {confirmDelete ? (
+          <div className="flex items-center gap-2">
+            <Button variant="danger" size="sm" onClick={handleDeleteShortlist}>
+              Confirm Delete
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
       </div>
 
       {/* Pipeline summary */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
         {statusOrder.map((status) => {
-          const count = data.listings.filter(
-            (l) => l.status === status
-          ).length;
+          const count = data.listings.filter((l) => l.status === status).length;
           if (count === 0) return null;
           return (
             <Badge key={status} variant="default" className="whitespace-nowrap">
@@ -208,42 +247,96 @@ export default function ShortlistDetailPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {data.listings.map((entry) => (
-            <div key={entry.id}>
+            <div key={entry.id} className="relative group">
+              {/* Remove button */}
+              <button
+                onClick={() => handleRemoveListing(entry.listingId)}
+                className="absolute -right-2 -top-2 z-10 bg-white border border-gray-200 rounded-full p-1 opacity-0 group-hover:opacity-100 transition shadow-sm hover:bg-red-50 hover:border-red-200 hover:text-red-600"
+                title="Remove from shortlist"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+
               <ShortlistListingCard
                 listing={entry.listing}
                 status={entry.status}
                 votes={entry.votes}
-                commentCount={entry._count.comments}
+                commentCount={entry.comments.length}
                 onVote={(value) => handleVote(entry.listingId, value)}
-                onStatusChange={(status) =>
-                  handleStatusChange(entry.listingId, status)
-                }
+                onStatusChange={(status) => handleStatusChange(entry.listingId, status)}
               />
-              {/* Comment input */}
-              <div className="flex gap-2 mt-1 ml-32 pl-3">
-                <Input
-                  placeholder="Add a comment..."
-                  value={commentInputs[entry.listingId] ?? ""}
-                  onChange={(e) =>
-                    setCommentInputs((prev) => ({
-                      ...prev,
-                      [entry.listingId]: e.target.value,
-                    }))
-                  }
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && handleComment(entry.listingId)
-                  }
-                  className="text-sm h-8"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleComment(entry.listingId)}
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </Button>
+
+              {/* Comments section */}
+              <div className="ml-32 pl-3 mt-1">
+                {entry.comments.length > 0 && (
+                  <button
+                    onClick={() => toggleComments(entry.listingId)}
+                    className="text-xs text-gray-500 hover:text-gray-700 mb-1"
+                  >
+                    {expandedComments.has(entry.listingId)
+                      ? "Hide comments"
+                      : `${entry.comments.length} comment${entry.comments.length !== 1 ? "s" : ""}`}
+                  </button>
+                )}
+
+                {expandedComments.has(entry.listingId) && (
+                  <div className="space-y-2 mb-2">
+                    {entry.comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        className="flex items-start gap-2 text-sm"
+                      >
+                        <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-medium shrink-0 mt-0.5">
+                          {comment.user.image ? (
+                            <img
+                              src={comment.user.image}
+                              alt=""
+                              className="w-full h-full rounded-full"
+                            />
+                          ) : (
+                            (comment.user.name?.[0] ?? "?").toUpperCase()
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">
+                            {comment.user.name ?? "Someone"}
+                          </span>
+                          <span className="text-gray-500 ml-1.5">
+                            {comment.content}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Comment input */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add a comment..."
+                    value={commentInputs[entry.listingId] ?? ""}
+                    onChange={(e) =>
+                      setCommentInputs((prev) => ({
+                        ...prev,
+                        [entry.listingId]: e.target.value,
+                      }))
+                    }
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleComment(entry.listingId)
+                    }
+                    className="text-sm h-8"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleComment(entry.listingId)}
+                    disabled={!commentInputs[entry.listingId]?.trim()}
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}

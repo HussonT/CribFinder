@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { ListingCard } from "@/components/listings/listing-card";
 import {
   ListingFilters,
   type FilterValues,
 } from "@/components/listings/listing-filters";
+import { ShortlistModal } from "@/components/shortlist-modal";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { Loader2, RefreshCw, MapPin } from "lucide-react";
-import type { Listing } from "@/generated/prisma";
+import type { Listing } from "@/lib/db/types";
 
 interface ListingsResponse {
   listings: Listing[];
@@ -18,6 +21,8 @@ interface ListingsResponse {
 }
 
 export default function ListingsPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [data, setData] = useState<ListingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
@@ -27,6 +32,7 @@ export default function ListingsPage() {
   });
   const [page, setPage] = useState(1);
   const [showMap, setShowMap] = useState(false);
+  const [shortlistModal, setShortlistModal] = useState<string | null>(null);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -48,12 +54,12 @@ export default function ListingsPage() {
       const res = await fetch(`/api/listings?${params}`);
       const json = await res.json();
       setData(json);
-    } catch (err) {
-      console.error("Failed to fetch listings:", err);
+    } catch {
+      toast("Failed to load listings", "error");
     } finally {
       setLoading(false);
     }
-  }, [filters, page]);
+  }, [filters, page, toast]);
 
   useEffect(() => {
     fetchListings();
@@ -61,59 +67,31 @@ export default function ListingsPage() {
 
   const handleScrape = async () => {
     setScraping(true);
+    toast("Scraping started — this may take a minute", "info");
     try {
-      await fetch("/api/scrape", {
+      const res = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          neighborhoods: filters.neighborhoods.length > 0
-            ? filters.neighborhoods
-            : undefined,
+          neighborhoods:
+            filters.neighborhoods.length > 0
+              ? filters.neighborhoods
+              : undefined,
         }),
       });
+      const result = await res.json();
+      toast(`Found ${result.total} new listings`, "success");
       await fetchListings();
-    } catch (err) {
-      console.error("Scrape failed:", err);
+    } catch {
+      toast("Scrape failed — check your connection", "error");
     } finally {
       setScraping(false);
     }
   };
 
-  const handleAddToShortlist = async (listingId: string) => {
-    // For now, prompt which shortlist — in future, show a dropdown
-    // TODO: Shortlist selector modal
-    try {
-      const res = await fetch("/api/shortlists");
-      const shortlists = await res.json();
-
-      if (shortlists.length === 0) {
-        // Create default shortlist
-        const createRes = await fetch("/api/shortlists", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "My Favorites" }),
-        });
-        const newList = await createRes.json();
-        await addToShortlist(newList.id, listingId);
-      } else {
-        await addToShortlist(shortlists[0].id, listingId);
-      }
-    } catch (err) {
-      console.error("Failed to add to shortlist:", err);
-    }
-  };
-
-  const addToShortlist = async (shortlistId: string, listingId: string) => {
-    await fetch(`/api/shortlists/${shortlistId}/listings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ listingId }),
-    });
-  };
-
   const handleContact = async (listingId: string) => {
     try {
-      // Create conversation and draft message
+      toast("Drafting your message with AI...", "info");
       const convRes = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,7 +99,6 @@ export default function ListingsPage() {
       });
       const conversation = await convRes.json();
 
-      // Get AI draft
       const draftRes = await fetch("/api/messages", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -133,10 +110,11 @@ export default function ListingsPage() {
       });
       const { draft } = await draftRes.json();
 
-      // Navigate to inbox with draft
-      window.location.href = `/inbox?conversation=${conversation.id}&draft=${encodeURIComponent(draft)}`;
-    } catch (err) {
-      console.error("Failed to start contact:", err);
+      router.push(
+        `/inbox?conversation=${conversation.id}&draft=${encodeURIComponent(draft)}`
+      );
+    } catch {
+      toast("Failed to draft message", "error");
     }
   };
 
@@ -199,7 +177,7 @@ export default function ListingsPage() {
               <ListingCard
                 key={listing.id}
                 listing={listing}
-                onAddToShortlist={handleAddToShortlist}
+                onAddToShortlist={(id) => setShortlistModal(id)}
                 onContact={handleContact}
               />
             ))}
@@ -230,6 +208,16 @@ export default function ListingsPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Shortlist selector modal */}
+      {shortlistModal && (
+        <ShortlistModal
+          listingId={shortlistModal}
+          open={!!shortlistModal}
+          onClose={() => setShortlistModal(null)}
+          onAdded={() => toast("Added to shortlist!", "success")}
+        />
       )}
     </div>
   );

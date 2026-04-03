@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { TARGET_NEIGHBORHOODS } from "@/lib/utils";
 import { Save, RefreshCw, Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
+  const { toast } = useToast();
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>(
     [...TARGET_NEIGHBORHOODS]
@@ -16,6 +18,25 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+
+  // Load saved preferences
+  useEffect(() => {
+    fetch("/api/users/preferences")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.searchPreferences) {
+          const prefs = data.searchPreferences as Record<string, unknown>;
+          if (Array.isArray(prefs.neighborhoods))
+            setSelectedNeighborhoods(prefs.neighborhoods as string[]);
+          if (prefs.maxBudget) setMaxBudget(String(prefs.maxBudget));
+          if (prefs.minBedrooms) setMinBedrooms(String(prefs.minBedrooms));
+        }
+        if (data?.whatsappId) setWhatsappNumber(data.whatsappId);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPrefs(false));
+  }, []);
 
   const toggleNeighborhood = (n: string) => {
     setSelectedNeighborhoods((prev) =>
@@ -25,14 +46,31 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    // TODO: Save to user profile via API
-    await new Promise((r) => setTimeout(r, 500));
-    setSaving(false);
+    try {
+      await fetch("/api/users/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          searchPreferences: {
+            neighborhoods: selectedNeighborhoods,
+            maxBudget: parseInt(maxBudget),
+            minBedrooms: parseInt(minBedrooms),
+          },
+          whatsappId: whatsappNumber || null,
+        }),
+      });
+      toast("Settings saved!", "success");
+    } catch {
+      toast("Failed to save settings", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleScrape = async () => {
     setScraping(true);
     setScrapeResult(null);
+    toast("Scraping started — this may take a minute", "info");
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
@@ -44,17 +82,26 @@ export default function SettingsPage() {
         }),
       });
       const result = await res.json();
-      setScrapeResult(
-        `Found ${result.total} listings: ${Object.entries(result.bySource)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join(", ")}`
-      );
+      const summary = `Found ${result.total} listings: ${Object.entries(result.bySource)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ")}`;
+      setScrapeResult(summary);
+      toast(summary, "success");
     } catch {
       setScrapeResult("Scrape failed. Check console for details.");
+      toast("Scrape failed", "error");
     } finally {
       setScraping(false);
     }
   };
+
+  if (loadingPrefs) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -63,7 +110,6 @@ export default function SettingsPage() {
       {/* Search Preferences */}
       <section className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Search Preferences</h2>
-
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

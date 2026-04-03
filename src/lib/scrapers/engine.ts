@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { generateFingerprint } from "@/lib/utils";
-import { ScrapeJobStatus } from "@/generated/prisma";
+import { ScrapeJobStatus } from "@/lib/db/types";
 import type { SourceAdapter, ScrapeConfig, RawListing } from "./types";
 import { craigslistAdapter } from "./craigslist";
 import { streetEasyAdapter } from "./streeteasy";
 import { zillowAdapter } from "./zillow";
 import { TARGET_NEIGHBORHOODS } from "@/lib/utils";
+import { analyzeScamRisk, analyzeListingQuality } from "@/lib/ai/analysis";
 
 const adapters: SourceAdapter[] = [
   craigslistAdapter,
@@ -156,11 +157,62 @@ async function saveListings(listings: RawListing[]): Promise<number> {
         },
       });
       saved++;
+
+      // Run AI analysis in the background (non-blocking for scraping speed)
+      analyzeListingAsync(raw).catch(() => {});
     } catch {
-      // Skip duplicates or invalid data silently
       console.warn(`Failed to save listing: ${raw.title}`);
     }
   }
 
   return saved;
+}
+
+/**
+ * Run AI scam detection and quality scoring on a listing.
+ * Updates the database record asynchronously.
+ */
+async function analyzeListingAsync(raw: RawListing): Promise<void> {
+  try {
+    const [scamResult, qualityResult] = await Promise.all([
+      analyzeScamRisk({
+        title: raw.title,
+        description: raw.description ?? null,
+        price: raw.price ?? null,
+        neighborhood: raw.neighborhood ?? null,
+        images: raw.images,
+        contactEmail: raw.contactEmail ?? null,
+        contactPhone: raw.contactPhone ?? null,
+        source: raw.source,
+      }),
+      analyzeListingQuality({
+        title: raw.title,
+        description: raw.description ?? null,
+        price: raw.price ?? null,
+        images: raw.images,
+        amenities: raw.amenities,
+        address: raw.address ?? null,
+        bedrooms: raw.bedrooms ?? null,
+        bathrooms: raw.bathrooms ?? null,
+        sqft: raw.sqft ?? null,
+        neighborhood: raw.neighborhood ?? null,
+      }),
+    ]);
+
+    const fingerprint = generateFingerprint(raw);
+
+    await prisma.listing.updateMany({
+      where: {
+        source: raw.source,
+        sourceId: raw.sourceId ?? fingerprint,
+      },
+      data: {
+        scamScore: scamResult.scamScore,
+        scamFlags: scamResult.flags,
+        qualityScore: qualityResult.qualityScore,
+      },
+    });
+  } catch {
+    // AI analysis failure shouldn't block scraping
+  }
 }

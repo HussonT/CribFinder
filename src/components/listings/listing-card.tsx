@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { formatPrice, timeAgo } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import type { Listing } from "@/generated/prisma";
+import type { Listing } from "@/lib/db/types";
 
 interface ListingCardProps {
   listing: Listing;
@@ -98,9 +99,11 @@ export function ListingCard({
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">
-              {listing.title}
-            </h3>
+            <Link href={`/listings/${listing.id}`} className="hover:underline">
+              <h3 className="font-semibold text-gray-900 truncate">
+                {listing.title}
+              </h3>
+            </Link>
             <p className="text-sm text-gray-500 mt-0.5">
               {listing.neighborhood ?? listing.address ?? listing.city}
             </p>

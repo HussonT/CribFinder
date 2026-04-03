@@ -1,4 +1,4 @@
-import { ListingSource, ContactMethod } from "@/generated/prisma";
+import { ListingSource, ContactMethod } from "@/lib/db/types";
 
 /**
  * Raw listing data extracted by a scraper before normalization.

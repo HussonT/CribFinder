@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Users, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Plus, Users, Link as LinkIcon, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 interface Shortlist {
@@ -22,6 +21,7 @@ export default function ShortlistsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/shortlists")
@@ -47,6 +47,12 @@ export default function ShortlistsPage() {
     }
   };
 
+  const deleteShortlist = async (id: string) => {
+    await fetch(`/api/shortlists/${id}`, { method: "DELETE" });
+    setShortlists((prev) => prev.filter((s) => s.id !== id));
+    setDeletingId(null);
+  };
+
   const copyInviteLink = async (shortlistId: string) => {
     const res = await fetch("/api/invite", {
       method: "POST",
@@ -55,7 +61,6 @@ export default function ShortlistsPage() {
     });
     const { url } = await res.json();
     await navigator.clipboard.writeText(url);
-    alert("Invite link copied!");
   };
 
   if (loading) {
@@ -77,7 +82,6 @@ export default function ShortlistsPage() {
         </div>
       </div>
 
-      {/* Create new */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
         <div className="flex gap-2">
           <Input
@@ -93,7 +97,6 @@ export default function ShortlistsPage() {
         </div>
       </div>
 
-      {/* Shortlist cards */}
       {shortlists.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-gray-500">No shortlists yet</p>
@@ -104,14 +107,13 @@ export default function ShortlistsPage() {
       ) : (
         <div className="space-y-3">
           {shortlists.map((sl) => (
-            <Link
+            <div
               key={sl.id}
-              href={`/shortlists/${sl.id}`}
-              className="block bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow"
+              className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-semibold text-lg">{sl.name}</h2>
+                <Link href={`/shortlists/${sl.id}`} className="flex-1 min-w-0">
+                  <h2 className="font-semibold text-lg hover:underline">{sl.name}</h2>
                   <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                     <span>{sl._count.listings} listings</span>
                     <span className="flex items-center gap-1">
@@ -119,10 +121,9 @@ export default function ShortlistsPage() {
                       {sl._count.members} members
                     </span>
                   </div>
-                </div>
+                </Link>
 
-                <div className="flex items-center gap-2">
-                  {/* Member avatars */}
+                <div className="flex items-center gap-2 shrink-0 ml-4">
                   <div className="flex -space-x-2">
                     {sl.members.slice(0, 4).map((m) => (
                       <div
@@ -131,11 +132,7 @@ export default function ShortlistsPage() {
                         title={m.user.name ?? ""}
                       >
                         {m.user.image ? (
-                          <img
-                            src={m.user.image}
-                            alt=""
-                            className="w-full h-full rounded-full"
-                          />
+                          <img src={m.user.image} alt="" className="w-full h-full rounded-full" />
                         ) : (
                           (m.user.name?.[0] ?? "?").toUpperCase()
                         )}
@@ -146,17 +143,33 @@ export default function ShortlistsPage() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      copyInviteLink(sl.id);
-                    }}
+                    onClick={() => copyInviteLink(sl.id)}
                   >
                     <LinkIcon className="w-3.5 h-3.5 mr-1" />
                     Invite
                   </Button>
+
+                  {deletingId === sl.id ? (
+                    <div className="flex items-center gap-1">
+                      <Button variant="danger" size="sm" onClick={() => deleteShortlist(sl.id)}>
+                        Delete
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeletingId(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeletingId(sl.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

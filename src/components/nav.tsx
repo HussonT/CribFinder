@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   Home,
@@ -23,12 +24,14 @@ export function Nav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 flex flex-col">
+    <nav className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 flex flex-col z-40">
       {/* Logo */}
       <div className="p-6">
         <Link href="/listings" className="flex items-center gap-2">
-          <Home className="w-6 h-6" />
-          <span className="text-xl font-bold">CribFinder</span>
+          <div className="w-8 h-8 bg-black text-white rounded-lg flex items-center justify-center">
+            <Home className="w-4 h-4" />
+          </div>
+          <span className="text-xl font-bold tracking-tight">CribFinder</span>
         </Link>
         <p className="text-xs text-gray-400 mt-1">
           West Village · SoHo · Chelsea
@@ -59,7 +62,10 @@ export function Nav() {
 
       {/* Bottom */}
       <div className="p-4 border-t border-gray-100">
-        <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition">
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition w-full"
+        >
           <LogOut className="w-4 h-4" />
           Sign Out
         </button>
